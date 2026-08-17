@@ -1,0 +1,89 @@
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #f6f7fb;
+  color: #1d2433;
+}
+.container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+header {
+  background: #111827;
+  color: white;
+  padding: 16px 0;
+}
+header .container { display: flex; justify-content: space-between; align-items: center; }
+button, input, textarea, select {
+  font: inherit;
+}
+.card {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 8px 18px rgba(0,0,0,0.06);
+}
+.hidden { display: none !important; }
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+label {
+  display: flex;
+  flex-direction: column;
+  font-weight: 600;
+  gap: 8px;
+}
+input, textarea, select {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+textarea { min-height: 120px; resize: vertical; }
+button {
+  background: #2563eb;
+  border: none;
+  color: white;
+  border-radius: 8px;
+  padding: 10px 16px;
+  cursor: pointer;
+}
+button.secondary { background: #374151; }
+button.danger { background: #dc2626; }
+button.success { background: #16a34a; }
+.row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.tabs { display: flex; gap: 12px; margin: 20px 0; }
+.tab-button {
+  background: #e5e7eb;
+  color: #111827;
+}
+.tab-button.active {
+  background: #111827;
+  color: white;
+}
+.table-wrap { overflow-x: auto; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+}
+th, td {
+  text-align: left;
+  padding: 12px 10px;
+  border-bottom: 1px solid #e5e7eb;
+  vertical-align: top;
+}
+.status-pill {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+.status-pending { background: #fef3c7; color: #92400e; }
+.status-replied { background: #dbeafe; color: #1d4ed8; }
+.status-closed { background: #dcfce7; color: #166534; }
+.form-actions { margin-top: 20px; }
+#loginForm { max-width: 420px; margin: 40px auto; }
+#errorBox { margin-top: 12px; color: #b91c1c; font-weight: 600; }

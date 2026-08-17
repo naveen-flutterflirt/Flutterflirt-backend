@@ -1,0 +1,35 @@
+{
+  "name": "flutterflirt-backend",
+  "version": "1.0.0",
+  "description": "Express backend for FlutterFlirt with Neon Postgres",
+  "main": "src/server.js",
+  "scripts": {
+    "predev": "kill-port 5000",
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js",
+    "db:init": "node scripts/init-db.js",
+    "db:seed": "node scripts/seed.js"
+  },
+  "keywords": [
+    "express",
+    "postgres",
+    "neon",
+    "blog",
+    "admin"
+  ],
+  "author": "FlutterFlirt",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0",
+    "pg": "^8.12.0",
+    "slugify": "^1.6.6"
+  },
+  "devDependencies": {
+    "kill-port": "^2.0.1",
+    "nodemon": "^3.1.9"
+  }
+}
