@@ -99,10 +99,76 @@ const updateContactQueryStatus = async (req, res) => {
   }
 };
 
+const replyToContactQuery = async (req, res) => {
+  const nodemailer = require('nodemailer');
+  try {
+    await ensureContactTable();
+    const { id } = req.params;
+    const { replyMessage, replySubject } = req.body;
+
+    if (!replyMessage) {
+      return res.status(400).json({ message: 'Reply message is required' });
+    }
+
+    const queryResult = await query('SELECT * FROM contact_queries WHERE id = $1', [id]);
+    if (queryResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Contact query not found' });
+    }
+
+    const queryData = normalizeContactQuery(queryResult.rows[0]);
+    let emailSent = false;
+    let mockMode = true;
+
+    if (process.env.SMTP_USER && process.env.SMTP_PASS) {
+      const transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST || 'smtp.ethereal.email',
+        port: Number(process.env.SMTP_PORT || 587),
+        secure: process.env.SMTP_SECURE === 'true',
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS,
+        },
+      });
+
+      await transporter.sendMail({
+        from: process.env.SMTP_FROM || `"FlutterFlirt Support" <${process.env.ADMIN_EMAIL || 'support@flutterflirt.com'}>`,
+        to: queryData.email,
+        subject: replySubject || `Re: Contact Query from ${queryData.name}`,
+        text: replyMessage,
+        html: `<p>${replyMessage.replace(/\n/g, '<br/>')}</p>`,
+      });
+      emailSent = true;
+      mockMode = false;
+    } else {
+      console.log('--- MOCK EMAIL SENT (Configure SMTP_USER & SMTP_PASS in .env for real delivery) ---');
+      console.log(`To: ${queryData.email}`);
+      console.log(`Subject: ${replySubject || `Re: Contact Query from ${queryData.name}`}`);
+      console.log(`Body: ${replyMessage}`);
+      console.log('-------------------------------------------------------------------------------');
+      emailSent = true;
+    }
+
+    // Automatically update the status to replied
+    await query(
+      "UPDATE contact_queries SET status = 'replied' WHERE id = $1",
+      [id]
+    );
+
+    return res.status(200).json({
+      message: mockMode ? 'Reply processed (mock email logged to console)' : 'Reply sent successfully via email',
+      emailSent,
+      mockMode,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Failed to send reply', error: error.message });
+  }
+};
+
 module.exports = {
   ensureContactTable,
   createContactQuery,
   getAllContactQueries,
   getContactQueryById,
   updateContactQueryStatus,
+  replyToContactQuery,
 };

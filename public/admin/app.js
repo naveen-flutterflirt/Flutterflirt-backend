@@ -4,6 +4,7 @@ const state = {
   blogs: [],
   contactQueries: [],
   editingId: null,
+  formSections: [],
 };
 
 const app = document.getElementById('app');
@@ -72,39 +73,59 @@ function renderLogin() {
   });
 }
 
+function slugifyPreview(text) {
+  return (text || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/[\s_-]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'section';
+}
+
 function renderBlogForm() {
   const blog = state.blogs.find((item) => item.id === state.editingId) || {
     title: '',
     excerpt: '',
-    content: '',
+    cover_image: '',
     category: 'Marketing',
-    image: '',
     author: 'FlutterFlirt Team',
     featured: false,
     status: 'draft',
+    sections: [
+      {
+        heading: 'Introduction',
+        content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Section content here...' }] }] },
+      },
+    ],
   };
+
+  if (!state.formSections || state.formSections.length === 0) {
+    state.formSections = blog.sections && blog.sections.length > 0 
+      ? JSON.parse(JSON.stringify(blog.sections))
+      : [{ heading: 'Introduction', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '' }] }] } }];
+  }
 
   return `
     <div class="card">
-      <h3>${state.editingId ? 'Edit Blog' : 'Add New Blog'}</h3>
+      <h3>${state.editingId ? 'Edit Blog Post' : 'Create New Blog Post'}</h3>
       <form id="blogForm">
         <input type="hidden" name="id" value="${state.editingId || ''}" />
         <div class="form-grid">
           <label>
             Title
-            <input name="title" required value="${escapeHtml(blog.title || '')}" />
+            <input name="title" required value="${escapeHtml(blog.title || '')}" placeholder="How to Learn React" />
           </label>
           <label>
             Category
-            <input name="category" value="${escapeHtml(blog.category || '')}" />
+            <input name="category" value="${escapeHtml(blog.category || '')}" placeholder="Technology" />
           </label>
           <label>
             Author
             <input name="author" value="${escapeHtml(blog.author || '')}" />
           </label>
           <label>
-            Image URL
-            <input name="image" value="${escapeHtml(blog.image || '')}" />
+            Cover Image URL
+            <input name="cover_image" value="${escapeHtml(blog.cover_image || blog.image || '')}" placeholder="https://images.unsplash.com/..." />
           </label>
           <label>
             Featured
@@ -121,16 +142,57 @@ function renderBlogForm() {
             </select>
           </label>
         </div>
-        <div class="form-grid" style="margin-top: 16px;">
+        <div style="margin-top: 16px;">
           <label>
             Excerpt
-            <textarea name="excerpt">${escapeHtml(blog.excerpt || '')}</textarea>
-          </label>
-          <label>
-            Content
-            <textarea name="content" required>${escapeHtml(blog.content || '')}</textarea>
+            <textarea name="excerpt" placeholder="Short preview of the article...">${escapeHtml(blog.excerpt || '')}</textarea>
           </label>
         </div>
+
+        <div style="margin-top: 24px; border-top: 1px solid #e5e7eb; padding-top: 16px;">
+          <div class="row" style="justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h4 style="margin: 0;">Ordered Sections (Tiptap JSON / Heading)</h4>
+            <button type="button" class="secondary" id="addSectionBtn">+ Add Section</button>
+          </div>
+
+          <div id="sectionsContainer">
+            ${state.formSections.map((sec, idx) => {
+              const textContent = typeof sec.content === 'string'
+                ? sec.content
+                : (sec.content?.content?.[0]?.content?.[0]?.text || JSON.stringify(sec.content || {}));
+              const previewSlug = sec.slug || slugifyPreview(sec.heading);
+              return `
+                <div class="card section-card" data-idx="${idx}" style="background: #f9fafb; margin-bottom: 16px; border: 1px solid #e5e7eb;">
+                  <div class="row" style="justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <strong>Section ${idx + 1}</strong>
+                    <div class="row">
+                      ${idx > 0 ? `<button type="button" class="secondary move-up-btn" data-idx="${idx}" style="padding: 4px 8px; font-size: 12px;">↑</button>` : ''}
+                      ${idx < state.formSections.length - 1 ? `<button type="button" class="secondary move-down-btn" data-idx="${idx}" style="padding: 4px 8px; font-size: 12px;">↓</button>` : ''}
+                      <button type="button" class="danger remove-sec-btn" data-idx="${idx}" style="padding: 4px 8px; font-size: 12px;">Remove</button>
+                    </div>
+                  </div>
+                  <div class="form-grid">
+                    <label>
+                      Heading
+                      <input class="sec-heading-input" data-idx="${idx}" value="${escapeHtml(sec.heading || '')}" required placeholder="What is React?" />
+                    </label>
+                    <label>
+                      Sidebar ID (Read-only anchor)
+                      <input value="#${escapeHtml(previewSlug)}" readonly style="background: #e5e7eb; color: #4b5563;" />
+                    </label>
+                  </div>
+                  <div style="margin-top: 12px;">
+                    <label>
+                      Content (Text or Tiptap JSON)
+                      <textarea class="sec-content-input" data-idx="${idx}" placeholder="Enter section body text...">${escapeHtml(textContent)}</textarea>
+                    </label>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+
         <div class="form-actions row">
           <button type="submit">${state.editingId ? 'Update Blog' : 'Create Blog'}</button>
           <button type="button" class="secondary" id="cancelEditBtn">Cancel</button>
@@ -179,28 +241,109 @@ function renderDashboard() {
     });
   });
 
-  const blogFormContainer = document.getElementById('blogFormContainer');
-  if (blogFormContainer) {
-    blogFormContainer.innerHTML = renderBlogForm();
-    document.getElementById('blogForm').addEventListener('submit', handleBlogSubmit);
-    document.getElementById('cancelEditBtn')?.addEventListener('click', () => {
-      state.editingId = null;
-      renderDashboard();
-    });
-  }
+  attachBlogFormHandlers();
+  attachTableHandlers();
+}
 
-  const addBlogBtn = document.getElementById('addBlogBtn');
-  addBlogBtn?.addEventListener('click', () => {
+function attachBlogFormHandlers() {
+  const blogFormContainer = document.getElementById('blogFormContainer');
+  if (!blogFormContainer) return;
+
+  blogFormContainer.innerHTML = renderBlogForm();
+  
+  const form = document.getElementById('blogForm');
+  if (form) form.addEventListener('submit', handleBlogSubmit);
+  
+  document.getElementById('cancelEditBtn')?.addEventListener('click', () => {
     state.editingId = null;
+    state.formSections = [];
+    renderDashboard();
+  });
+
+  document.getElementById('addSectionBtn')?.addEventListener('click', () => {
+    saveCurrentFormInputs();
+    state.formSections.push({
+      heading: `Section ${state.formSections.length + 1}`,
+      content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '' }] }] },
+    });
+    attachBlogFormHandlers();
+  });
+
+  document.querySelectorAll('.remove-sec-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      saveCurrentFormInputs();
+      const idx = Number(btn.dataset.idx);
+      state.formSections.splice(idx, 1);
+      if (state.formSections.length === 0) {
+        state.formSections.push({ heading: 'Introduction', content: '' });
+      }
+      attachBlogFormHandlers();
+    });
+  });
+
+  document.querySelectorAll('.move-up-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      saveCurrentFormInputs();
+      const idx = Number(btn.dataset.idx);
+      if (idx > 0) {
+        const temp = state.formSections[idx];
+        state.formSections[idx] = state.formSections[idx - 1];
+        state.formSections[idx - 1] = temp;
+        attachBlogFormHandlers();
+      }
+    });
+  });
+
+  document.querySelectorAll('.move-down-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      saveCurrentFormInputs();
+      const idx = Number(btn.dataset.idx);
+      if (idx < state.formSections.length - 1) {
+        const temp = state.formSections[idx];
+        state.formSections[idx] = state.formSections[idx + 1];
+        state.formSections[idx + 1] = temp;
+        attachBlogFormHandlers();
+      }
+    });
+  });
+}
+
+function saveCurrentFormInputs() {
+  document.querySelectorAll('.sec-heading-input').forEach((input) => {
+    const idx = Number(input.dataset.idx);
+    if (state.formSections[idx]) {
+      state.formSections[idx].heading = input.value;
+    }
+  });
+  document.querySelectorAll('.sec-content-input').forEach((textarea) => {
+    const idx = Number(textarea.dataset.idx);
+    if (state.formSections[idx]) {
+      const val = textarea.value;
+      try {
+        state.formSections[idx].content = JSON.parse(val);
+      } catch {
+        state.formSections[idx].content = {
+          type: 'doc',
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: val }] }],
+        };
+      }
+    }
+  });
+}
+
+function attachTableHandlers() {
+  document.getElementById('addBlogBtn')?.addEventListener('click', () => {
+    state.editingId = null;
+    state.formSections = [{ heading: 'Introduction', content: '' }];
     renderDashboard();
   });
 
   document.querySelectorAll('[data-action="delete-blog"]').forEach((button) => {
     button.addEventListener('click', async () => {
-      const id = Number(button.dataset.id);
-      if (!confirm('Delete this blog?')) return;
+      const id = button.dataset.id;
+      if (!confirm('Delete this blog post?')) return;
       try {
-        await apiFetch(`/api/admin/blogs/${id}`, { method: 'DELETE' });
+        await apiFetch(`/api/blogs/${id}`, { method: 'DELETE' });
         await loadDashboardData();
       } catch (error) {
         alert(error.message);
@@ -210,7 +353,10 @@ function renderDashboard() {
 
   document.querySelectorAll('[data-action="edit-blog"]').forEach((button) => {
     button.addEventListener('click', () => {
-      state.editingId = Number(button.dataset.id);
+      const id = button.dataset.id;
+      state.editingId = id;
+      const found = state.blogs.find((b) => b.id === id);
+      state.formSections = found?.sections ? JSON.parse(JSON.stringify(found.sections)) : [];
       renderDashboard();
     });
   });
@@ -235,11 +381,11 @@ function renderDashboard() {
 function renderBlogSection() {
   return `
     <div class="row" style="margin-bottom: 16px;">
-      <button id="addBlogBtn">Add Blog</button>
+      <button id="addBlogBtn">Add New Blog</button>
     </div>
     <div id="blogFormContainer"></div>
     <div class="card" style="margin-top: 20px;">
-      <h3>Blog List</h3>
+      <h3>Published & Draft Blogs</h3>
       <div class="table-wrap">
         <table>
           <thead>
@@ -247,18 +393,19 @@ function renderBlogSection() {
               <th>Title</th>
               <th>Category</th>
               <th>Status</th>
-              <th>Featured</th>
+              <th>Sections</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             ${state.blogs.length ? state.blogs.map(blog => `
               <tr>
-                <td>${escapeHtml(blog.title)}</td>
+                <td><strong>${escapeHtml(blog.title)}</strong><br/><small style="color: #6b7280;">/blog/${escapeHtml(blog.slug)}</small></td>
                 <td>${escapeHtml(blog.category || 'General')}</td>
-                <td>${escapeHtml(blog.status)}</td>
-                <td>${blog.featured ? 'Yes' : 'No'}</td>
+                <td><span class="status-pill ${blog.status === 'published' ? 'status-closed' : 'status-pending'}">${escapeHtml(blog.status)}</span></td>
+                <td>${blog.sections ? blog.sections.length : 0} sections</td>
                 <td class="row">
+                  <a href="/blog/${escapeHtml(blog.slug)}" target="_blank" style="font-size: 13px; color: #2563eb; text-decoration: none; margin-right: 8px;">View</a>
                   <button class="secondary" data-action="edit-blog" data-id="${blog.id}">Edit</button>
                   <button class="danger" data-action="delete-blog" data-id="${blog.id}">Delete</button>
                 </td>
@@ -308,32 +455,40 @@ function renderQueriesSection() {
 
 async function handleBlogSubmit(event) {
   event.preventDefault();
+  saveCurrentFormInputs();
+
   const form = event.target;
   const formData = new FormData(form);
+
   const payload = {
     title: formData.get('title'),
     excerpt: formData.get('excerpt'),
-    content: formData.get('content'),
+    cover_image: formData.get('cover_image'),
     category: formData.get('category'),
-    image: formData.get('image'),
     author: formData.get('author'),
     featured: formData.get('featured') === 'true',
     status: formData.get('status'),
+    sections: state.formSections.map((sec) => ({
+      id: sec.id,
+      heading: sec.heading,
+      content: sec.content,
+    })),
   };
 
   try {
     if (state.editingId) {
-      await apiFetch(`/api/admin/blogs/${state.editingId}`, {
+      await apiFetch(`/api/blogs/${state.editingId}`, {
         method: 'PUT',
         body: JSON.stringify(payload),
       });
     } else {
-      await apiFetch('/api/admin/blogs', {
+      await apiFetch('/api/blogs', {
         method: 'POST',
         body: JSON.stringify(payload),
       });
     }
     state.editingId = null;
+    state.formSections = [];
     await loadDashboardData();
   } catch (error) {
     alert(error.message);
@@ -343,10 +498,10 @@ async function handleBlogSubmit(event) {
 async function loadDashboardData() {
   try {
     const [blogs, queries] = await Promise.all([
-      apiFetch('/api/admin/blogs'),
-      apiFetch('/api/admin/contact-queries'),
+      apiFetch('/api/admin/blogs').catch(() => apiFetch('/api/blogs')),
+      apiFetch('/api/admin/contact-queries').catch(() => []),
     ]);
-    state.blogs = blogs.blogs || blogs || [];
+    state.blogs = blogs.data || blogs.blogs || blogs || [];
     state.contactQueries = queries.contactQueries || queries || [];
     renderDashboard();
   } catch (error) {
@@ -360,7 +515,6 @@ async function initialize() {
     renderLogin();
     return;
   }
-
   await loadDashboardData();
 }
 

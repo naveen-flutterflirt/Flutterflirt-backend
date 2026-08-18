@@ -1,13 +1,19 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
+const isRemoteDb = process.env.DATABASE_URL && (
+  process.env.DATABASE_URL.includes('neon.tech') ||
+  process.env.DATABASE_URL.includes('sslmode=require') ||
+  process.env.NODE_ENV === 'production'
+);
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  ssl: isRemoteDb ? { rejectUnauthorized: false } : false,
 });
 
 pool.on('connect', () => {
-  console.log('Connected to Neon Postgres database');
+  console.log('Connected to PostgreSQL database');
 });
 
 pool.on('error', (err) => {

@@ -7,5 +7,6 @@ router.post('/contact', contactController.createContactQuery);
 router.get('/admin/contact-queries', authMiddleware, contactController.getAllContactQueries);
 router.get('/admin/contact-queries/:id', authMiddleware, contactController.getContactQueryById);
 router.patch('/admin/contact-queries/:id/status', authMiddleware, contactController.updateContactQueryStatus);
+router.post('/admin/contact-queries/:id/reply', authMiddleware, contactController.replyToContactQuery);
 
 module.exports = router;
