@@ -70,7 +70,7 @@ router.post('/admin/upload', authMiddleware, upload.single('image'), async (req,
       })
     );
 
-    const imageUrl = `https://${AWS_S3_BUCKET}.s3.${AWS_REGION}.amazonaws.com/${fileName}`;
+    const imageUrl = `https://s3.${AWS_REGION}.amazonaws.com/${AWS_S3_BUCKET}/${fileName}`;
 
     return res.status(200).json({
       message: 'Image uploaded successfully',
