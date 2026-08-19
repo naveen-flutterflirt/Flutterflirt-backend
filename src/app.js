@@ -7,6 +7,7 @@ require('dotenv').config();
 const blogRoutes = require('./routes/blogRoutes');
 const contactRoutes = require('./routes/contactRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const uploadRoutes = require('./routes/uploadRoutes');
 
 const app = express();
 
@@ -52,6 +53,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api', blogRoutes);
 app.use('/api', contactRoutes);
 app.use('/api', adminRoutes);
+app.use('/api', uploadRoutes);
 
 app.use('/admin', express.static(path.join(__dirname, '../public/admin')));
 app.get('/admin', (req, res) => {
