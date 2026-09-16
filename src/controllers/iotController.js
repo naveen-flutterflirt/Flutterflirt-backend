@@ -327,44 +327,7 @@ exports.verifyKitCode = async (req, res) => {
       return res.status(400).json({ message: 'Please provide a valid Kit Activation Code.' });
     }
 
-    const normalizedCode = code.trim().toUpperCase();
-
-    // Check code in database
-    const query = `
-      SELECT * FROM iot_access_codes 
-      WHERE UPPER(code) = $1
-    `;
-    const { rows } = await pool.query(query, [normalizedCode]);
-
-    if (rows.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid Kit Activation Code. Please check the code provided inside your Niva Hardware Kit package.',
-      });
-    }
-
-    const codeRecord = rows[0];
-
-    if (!codeRecord.is_active) {
-      return res.status(400).json({
-        success: false,
-        message: 'This activation code has been deactivated or disabled.',
-      });
-    }
-
-    if (codeRecord.expires_at && new Date(codeRecord.expires_at) < new Date()) {
-      return res.status(400).json({
-        success: false,
-        message: 'This activation code has expired.',
-      });
-    }
-
-    if (codeRecord.max_uses > 0 && codeRecord.times_used >= codeRecord.max_uses) {
-      return res.status(400).json({
-        success: false,
-        message: 'This activation code has already reached its maximum redemption limit.',
-      });
-    }
+    const normalizedCode = code.trim();
 
     // Check if request is authenticated with a logged in user
     let loggedInUserId = null;
@@ -382,15 +345,43 @@ exports.verifyKitCode = async (req, res) => {
       }
     }
 
-    // Increment usage
-    await pool.query(
-      `UPDATE iot_access_codes 
-       SET times_used = times_used + 1,
-           redeemed_at = NOW(),
-           redeemed_by = COALESCE($1, redeemed_by)
-       WHERE id = $2`,
-      [loggedInUser?.email || studentEmail || studentName || 'Student Kit Purchaser', codeRecord.id]
-    );
+    // Determine email to verify against (must have one for fraud check)
+    const emailToVerify = loggedInUser?.email || studentEmail;
+
+    if (!emailToVerify) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Email is required to verify the kit code.' 
+      });
+    }
+
+    // Fetch from NivaShop API
+    const response = await fetch('https://api.nivashop.in/api/orders/public/all');
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch orders from NivaShop API. Status: ${response.status}`);
+    }
+
+    const responseData = await response.json();
+    const orders = responseData.data || [];
+
+    // Find the order that matches the provided kit code
+    const order = orders.find(o => o.iotKitCode && o.iotKitCode.trim() === normalizedCode);
+
+    if (!order) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid Kit Activation Code or no purchase found.',
+      });
+    }
+
+    // Fraud Check: Strict Email Match
+    if (order.customerEmail.toLowerCase().trim() !== emailToVerify.toLowerCase().trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Fraud check failed: Email does not match the purchase record for this kit.',
+      });
+    }
 
     // If logged in student, permanently mark their user account as unlocked in database
     if (loggedInUserId) {
@@ -401,7 +392,7 @@ exports.verifyKitCode = async (req, res) => {
              unlocked_at = NOW(),
              updated_at = NOW()
          WHERE id = $2`,
-        [codeRecord.code, loggedInUserId]
+        [normalizedCode, loggedInUserId]
       );
     }
 
@@ -410,12 +401,12 @@ exports.verifyKitCode = async (req, res) => {
       {
         id: loggedInUserId,
         access: 'iot_lectures',
-        code: codeRecord.code,
+        code: normalizedCode,
         verified: true,
         is_kit_unlocked: true,
         role: 'student',
-        user: loggedInUser?.name || studentName || 'IoT Student',
-        email: loggedInUser?.email || studentEmail || '',
+        user: loggedInUser?.name || studentName || order.customerName || 'IoT Student',
+        email: emailToVerify,
       },
       process.env.JWT_SECRET,
       { expiresIn: '90d' }
@@ -425,10 +416,10 @@ exports.verifyKitCode = async (req, res) => {
       success: true,
       message: 'Kit verified successfully! All IoT Labs Video Lectures are now unlocked.',
       token,
-      code: codeRecord.code,
+      code: normalizedCode,
       user: {
         id: loggedInUserId,
-        name: loggedInUser?.name || studentName || 'IoT Student',
+        name: loggedInUser?.name || studentName || order.customerName || 'IoT Student',
         is_kit_unlocked: true,
       },
     });
