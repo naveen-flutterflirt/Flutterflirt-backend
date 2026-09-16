@@ -58,7 +58,11 @@ router.post('/admin/upload', authMiddleware, upload.single('image'), async (req,
     });
 
     const fileExtension = path.extname(req.file.originalname).toLowerCase();
-    const fileName = `blogs/${Date.now()}-${Math.random().toString(36).substring(2, 8)}${fileExtension}`;
+    const targetSlug = req.body?.masterclassSlug || req.query?.masterclassSlug;
+    const folder = targetSlug
+      ? `masterclasses/${targetSlug.toLowerCase().replace(/[^a-z0-9_-]/g, '-')}/images`
+      : 'blogs';
+    const fileName = `${folder}/${Date.now()}-${Math.random().toString(36).substring(2, 8)}${fileExtension}`;
 
     // Upload to S3
     await s3.send(

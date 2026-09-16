@@ -8,6 +8,7 @@ const blogRoutes = require('./routes/blogRoutes');
 const contactRoutes = require('./routes/contactRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const uploadRoutes = require('./routes/uploadRoutes');
+const iotRoutes = require('./routes/iotRoutes');
 
 const app = express();
 
@@ -55,6 +56,7 @@ app.use('/api', blogRoutes);
 app.use('/api', contactRoutes);
 app.use('/api', adminRoutes);
 app.use('/api', uploadRoutes);
+app.use('/api', iotRoutes);
 
 app.use('/admin', express.static(path.join(__dirname, '../public/admin')));
 app.get('/admin', (req, res) => {
