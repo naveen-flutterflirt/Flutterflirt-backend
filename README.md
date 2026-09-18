@@ -11,7 +11,7 @@ This is the separate Express backend for the FlutterFlirt website. It handles:
 
 - Node.js
 - Express.js
-- MongoDB with Mongoose
+- PostgreSQL (Neon) with pg
 - JWT for admin auth
 - Static admin dashboard served under /admin
 
