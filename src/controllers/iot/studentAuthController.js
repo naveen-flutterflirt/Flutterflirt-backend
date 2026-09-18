@@ -86,14 +86,14 @@ exports.registerStudent = async (req, res) => {
         is_kit_unlocked: false,
       },
       process.env.JWT_SECRET,
-      { expiresIn: '60d' }
+      { expiresIn: '3650d' }
     );
 
     res.cookie('token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-      maxAge: 60 * 24 * 60 * 60 * 1000 // 60 days
+      maxAge: 3650 * 24 * 60 * 60 * 1000 // 10 years
     });
 
     return res.status(201).json({
@@ -143,14 +143,14 @@ exports.loginStudent = async (req, res) => {
         is_kit_unlocked: user.is_kit_unlocked,
       },
       process.env.JWT_SECRET,
-      { expiresIn: '60d' }
+      { expiresIn: '3650d' }
     );
 
     res.cookie('token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-      maxAge: 60 * 24 * 60 * 60 * 1000 // 60 days
+      maxAge: 3650 * 24 * 60 * 60 * 1000 // 10 years
     });
 
     return res.status(200).json({
@@ -312,14 +312,14 @@ exports.verifyKitCode = async (req, res) => {
         email: emailToVerify,
       },
       process.env.JWT_SECRET,
-      { expiresIn: '90d' }
+      { expiresIn: '3650d' }
     );
 
     res.cookie('token', newToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-      maxAge: 90 * 24 * 60 * 60 * 1000 // 90 days
+      maxAge: 3650 * 24 * 60 * 60 * 1000 // 10 years
     });
 
     return res.status(200).json({
