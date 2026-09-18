@@ -1,182 +1,22 @@
-const { pool, query } = require('../config/db');
-const { generateSectionSlugs, generateUniqueBlogSlug } = require('../utils/slugify');
-const { blogCache } = require('../utils/cache');
+const { query, pool } = require('../../config/db');
+const path = require('path');
+const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const { v4: uuidv4 } = require('uuid');
+const NodeCache = require("node-cache");
+const blogCache = new NodeCache({ stdTTL: 300 });
+const { generateUniqueBlogSlug, generateSectionSlugs } = require('../../utils/slugify');
+const { formatBlog, sanitizeTiptapContent } = require('../../utils/blogUtils');
 
-/**
- * Format blog record with camelCase / clean fields
- */
-const formatBlog = (blogRow, sections = []) => {
-  if (!blogRow) return null;
-  return {
-    id: blogRow.id,
-    title: blogRow.title,
-    slug: blogRow.slug,
-    excerpt: blogRow.excerpt || '',
-    cover_image: blogRow.cover_image || '',
-    image: blogRow.cover_image || '', // alias for frontend compatibility
-    category: blogRow.category || 'General',
-    author: blogRow.author || 'FlutterFlirt Team',
-    featured: Boolean(blogRow.featured),
-    status: blogRow.status || 'draft',
-    created_at: blogRow.created_at,
-    updated_at: blogRow.updated_at,
-    published_at: blogRow.published_at,
-    publishedAt: blogRow.published_at, // alias
-    sections: sections.map(formatSection),
-  };
-};
 
-const formatSection = (sectionRow) => ({
-  id: sectionRow.id,
-  blog_id: sectionRow.blog_id,
-  heading: sectionRow.heading,
-  slug: sectionRow.slug,
-  content: typeof sectionRow.content === 'string' ? JSON.parse(sectionRow.content) : (sectionRow.content || {}),
-  position: sectionRow.position,
-  created_at: sectionRow.created_at,
-  updated_at: sectionRow.updated_at,
+// AWS S3 Configuration
+const s3Client = new S3Client({
+  region: process.env.AWS_REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  },
 });
 
-/**
- * Normalize Tiptap JSON content
- */
-const sanitizeTiptapContent = (content) => {
-  if (!content) {
-    return { type: 'doc', content: [{ type: 'paragraph', content: [] }] };
-  }
-  if (typeof content === 'string') {
-    try {
-      return JSON.parse(content);
-    } catch {
-      return {
-        type: 'doc',
-        content: [{ type: 'paragraph', content: [{ type: 'text', text: content }] }],
-      };
-    }
-  }
-  if (typeof content === 'object') {
-    return content;
-  }
-  return { type: 'doc', content: [{ type: 'paragraph', content: [] }] };
-};
-
-/**
- * GET /api/blogs
- * Fetch all published blogs (cached for 60 seconds)
- */
-const getAllBlogs = async (req, res) => {
-  try {
-    const cacheKey = 'blogs:published';
-    const cached = blogCache.get(cacheKey);
-
-    res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=120, stale-while-revalidate=300');
-
-    if (cached) {
-      res.setHeader('X-Cache', 'HIT');
-      return res.status(200).json({
-        success: true,
-        data: cached,
-        blogs: cached,
-      });
-    }
-
-    res.setHeader('X-Cache', 'MISS');
-
-    const blogsQuery = `
-      SELECT b.*, 
-        COALESCE(
-          json_agg(
-            json_build_object(
-              'id', s.id,
-              'heading', s.heading,
-              'slug', s.slug,
-              'content', s.content,
-              'position', s.position,
-              'created_at', s.created_at,
-              'updated_at', s.updated_at
-            ) ORDER BY s.position ASC
-          ) FILTER (WHERE s.id IS NOT NULL),
-          '[]'
-        ) AS sections
-      FROM blogs b
-      LEFT JOIN blog_sections s ON b.id = s.blog_id
-      WHERE b.status = 'published'
-      GROUP BY b.id
-      ORDER BY b.published_at DESC NULLS LAST, b.created_at DESC
-    `;
-
-    const result = await query(blogsQuery);
-    const blogs = result.rows.map((row) => formatBlog(row, row.sections));
-
-    // Save to cache for 60 seconds
-    blogCache.set(cacheKey, blogs, 60);
-
-    return res.status(200).json({
-      success: true,
-      data: blogs,
-      blogs: blogs,
-    });
-  } catch (error) {
-    console.error('getAllBlogs error:', error);
-    return res.status(500).json({ success: false, message: 'Failed to fetch blogs', error: error.message });
-  }
-};
-
-/**
- * GET /api/blogs/:slug
- * Fetch a single blog by slug with all sections ordered by position ASC (cached for 60 seconds)
- */
-const getBlogBySlug = async (req, res) => {
-  try {
-    const { slug } = req.params;
-    const cacheKey = `blogs:slug:${slug}`;
-    const cached = blogCache.get(cacheKey);
-
-    res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=120, stale-while-revalidate=300');
-
-    if (cached) {
-      res.setHeader('X-Cache', 'HIT');
-      return res.status(200).json({
-        success: true,
-        data: cached,
-        blog: cached,
-      });
-    }
-
-    res.setHeader('X-Cache', 'MISS');
-
-    const blogRes = await query('SELECT * FROM blogs WHERE slug = $1', [slug]);
-
-    if (blogRes.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Blog not found' });
-    }
-
-    const blog = blogRes.rows[0];
-    const sectionsRes = await query(
-      'SELECT * FROM blog_sections WHERE blog_id = $1 ORDER BY position ASC',
-      [blog.id]
-    );
-
-    const formatted = formatBlog(blog, sectionsRes.rows);
-
-    // Save to cache for 60 seconds
-    blogCache.set(cacheKey, formatted, 60);
-
-    return res.status(200).json({
-      success: true,
-      data: formatted,
-      blog: formatted,
-    });
-  } catch (error) {
-    console.error('getBlogBySlug error:', error);
-    return res.status(500).json({ success: false, message: 'Failed to fetch blog', error: error.message });
-  }
-};
-
-/**
- * GET /api/admin/blogs
- * Fetch all blogs (drafts & published) for admin dashboard
- */
 const getAdminBlogs = async (req, res) => {
   try {
     const cacheKey = 'blogs:admin:all';
@@ -231,10 +71,6 @@ const getAdminBlogs = async (req, res) => {
   }
 };
 
-/**
- * GET /api/admin/blogs/:id
- * Fetch single blog by ID for editing
- */
 const getBlogById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -279,10 +115,6 @@ const getBlogById = async (req, res) => {
   }
 };
 
-/**
- * POST /api/blogs or POST /api/admin/blogs
- * Create blog + sections inside a single transaction (purges cache)
- */
 const createBlog = async (req, res) => {
   const client = await pool.connect();
   try {
@@ -383,10 +215,6 @@ const createBlog = async (req, res) => {
   }
 };
 
-/**
- * PUT /api/blogs/:id or PUT /api/admin/blogs/:id
- * Update blog + synchronize sections in a single transaction (purges cache)
- */
 const updateBlog = async (req, res) => {
   const client = await pool.connect();
   try {
@@ -585,9 +413,6 @@ const updateBlog = async (req, res) => {
   }
 };
 
-/**
- * DELETE /api/blogs/:id or DELETE /api/admin/blogs/:id (purges cache)
- */
 const deleteBlog = async (req, res) => {
   try {
     const { id } = req.params;
@@ -612,11 +437,9 @@ const deleteBlog = async (req, res) => {
 };
 
 module.exports = {
-  getAllBlogs,
-  getBlogBySlug,
-  getBlogById,
   getAdminBlogs,
+  getBlogById,
   createBlog,
   updateBlog,
-  deleteBlog,
+  deleteBlog
 };
