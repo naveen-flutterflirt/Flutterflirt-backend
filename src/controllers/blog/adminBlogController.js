@@ -196,7 +196,7 @@ const createBlog = async (req, res) => {
     await client.query('COMMIT');
 
     // Invalidate all blog caches
-    blogCache.invalidatePattern('blogs:');
+    blogCache.flushAll();
 
     const formattedResponse = formatBlog(createdBlog, createdSections);
 
@@ -388,7 +388,7 @@ const updateBlog = async (req, res) => {
     await client.query('COMMIT');
 
     // Invalidate all blog caches
-    blogCache.invalidatePattern('blogs:');
+    blogCache.flushAll();
 
     // Fetch ordered sections
     const finalSectionsRes = await query(
@@ -423,7 +423,7 @@ const deleteBlog = async (req, res) => {
     }
 
     // Invalidate all blog caches
-    blogCache.invalidatePattern('blogs:');
+    blogCache.flushAll();
 
     return res.status(200).json({
       success: true,
