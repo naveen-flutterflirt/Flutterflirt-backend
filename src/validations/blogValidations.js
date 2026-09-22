@@ -2,7 +2,7 @@ const { z } = require('zod');
 
 const createBlogSchema = z.object({
   title: z.string().min(3, "Title is required"),
-  slug: z.string().min(3, "Slug is required"),
+  slug: z.string().optional(),
   excerpt: z.string().optional(),
   category: z.string().optional(),
   author: z.string().optional(),
