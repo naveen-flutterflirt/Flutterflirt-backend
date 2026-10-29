@@ -10,5 +10,6 @@ router.get('/admin/contact-queries', authMiddleware, contactController.getAllCon
 router.get('/admin/contact-queries/:id', authMiddleware, contactController.getContactQueryById);
 router.patch('/admin/contact-queries/:id/status', authMiddleware, contactController.updateContactQueryStatus);
 router.post('/admin/contact-queries/:id/reply', authMiddleware, contactController.replyToContactQuery);
+router.delete('/admin/contact-queries/:id', authMiddleware, contactController.deleteContactQuery);
 
 module.exports = router;

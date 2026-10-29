@@ -164,6 +164,24 @@ const replyToContactQuery = async (req, res) => {
   }
 };
 
+
+const deleteContactQuery = async (req, res) => {
+  try {
+    await ensureContactTable();
+    const { id } = req.params;
+
+    const checkResult = await query('SELECT id FROM contact_queries WHERE id = $1', [id]);
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Contact query not found' });
+    }
+
+    await query('DELETE FROM contact_queries WHERE id = $1', [id]);
+    return res.status(200).json({ success: true, message: 'Contact query deleted successfully' });
+  } catch (error) {
+    return res.status(500).json({ message: 'Failed to delete contact query', error: error.message });
+  }
+};
+
 module.exports = {
   ensureContactTable,
   createContactQuery,
@@ -171,4 +189,5 @@ module.exports = {
   getContactQueryById,
   updateContactQueryStatus,
   replyToContactQuery,
+  deleteContactQuery,
 };
