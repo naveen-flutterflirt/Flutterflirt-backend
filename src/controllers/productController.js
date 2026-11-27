@@ -1,5 +1,7 @@
 const { query } = require('../config/db');
 const { Pool } = require('pg');
+const NodeCache = require('node-cache');
+const productCache = new NodeCache({ stdTTL: 120, checkperiod: 60 });
 
 const normalizeProduct = (row) => ({
   id: row.id,
@@ -20,7 +22,9 @@ const normalizeProduct = (row) => ({
   updatedAt: row.updated_at,
 });
 
+let isProductsTableReady = false;
 const ensureProductsTable = async () => {
+  if (isProductsTableReady) return;
   await query(`
     CREATE TABLE IF NOT EXISTS saas_products (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -40,21 +44,35 @@ const ensureProductsTable = async () => {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    CREATE INDEX IF NOT EXISTS idx_saas_products_status_sort ON saas_products(status, sort_order ASC, created_at DESC);
   `);
   // Ensure column exists for already created tables
   await query(`ALTER TABLE saas_products ADD COLUMN IF NOT EXISTS demo_db_url TEXT DEFAULT '';`);
+  isProductsTableReady = true;
 };
 
-// Public endpoint: Fetch active products for website visitors
+// Public endpoint: Fetch active products for website visitors (cached with sub-millisecond response)
 const getPublicProducts = async (req, res) => {
   try {
+    const cached = productCache.get('products:public');
+    if (cached) {
+      res.setHeader('X-Cache', 'HIT');
+      res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=120, stale-while-revalidate=300');
+      return res.status(200).json({ products: cached });
+    }
+
     await ensureProductsTable();
     const result = await query(
       `SELECT * FROM saas_products 
        WHERE status = 'active' 
        ORDER BY sort_order ASC, created_at DESC`
     );
-    return res.status(200).json({ products: result.rows.map(normalizeProduct) });
+    const products = result.rows.map(normalizeProduct);
+    productCache.set('products:public', products, 120);
+
+    res.setHeader('X-Cache', 'MISS');
+    res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=120, stale-while-revalidate=300');
+    return res.status(200).json({ products });
   } catch (error) {
     console.error('Error fetching public products:', error);
     return res.status(500).json({ message: 'Failed to fetch products', error: error.message });
@@ -64,12 +82,22 @@ const getPublicProducts = async (req, res) => {
 // Admin endpoint: Fetch all products (including drafts & archived)
 const getAllProductsAdmin = async (req, res) => {
   try {
+    const cached = productCache.get('products:admin');
+    if (cached) {
+      res.setHeader('X-Cache', 'HIT');
+      return res.status(200).json({ products: cached });
+    }
+
     await ensureProductsTable();
     const result = await query(
       `SELECT * FROM saas_products 
        ORDER BY sort_order ASC, created_at DESC`
     );
-    return res.status(200).json({ products: result.rows.map(normalizeProduct) });
+    const products = result.rows.map(normalizeProduct);
+    productCache.set('products:admin', products, 60);
+
+    res.setHeader('X-Cache', 'MISS');
+    return res.status(200).json({ products });
   } catch (error) {
     console.error('Error fetching admin products:', error);
     return res.status(500).json({ message: 'Failed to fetch products', error: error.message });
@@ -119,6 +147,7 @@ const createProduct = async (req, res) => {
       ]
     );
 
+    productCache.flushAll();
     return res.status(201).json({
       message: 'Product created successfully',
       product: normalizeProduct(result.rows[0]),
@@ -190,6 +219,7 @@ const updateProduct = async (req, res) => {
       return res.status(404).json({ message: 'Product not found' });
     }
 
+    productCache.flushAll();
     return res.status(200).json({
       message: 'Product updated successfully',
       product: normalizeProduct(result.rows[0]),
@@ -215,6 +245,7 @@ const deleteProduct = async (req, res) => {
       return res.status(404).json({ message: 'Product not found' });
     }
 
+    productCache.flushAll();
     return res.status(200).json({
       message: 'Product deleted successfully',
       id,

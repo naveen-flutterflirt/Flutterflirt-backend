@@ -1046,116 +1046,149 @@ const getAllDemoSessions = async (req, res) => {
          WHERE ds.status = 'ready' AND ds.first_login_at IS NULL AND p.demo_db_url IS NOT NULL AND p.demo_db_url != ''`
       );
 
-      for (const row of readySessions.rows) {
-        try {
-          const pool = new Pool({ connectionString: row.demo_db_url, connectionTimeoutMillis: 4000 });
-          
-          let hasLoggedIn = false;
-          let loginTimestamp = new Date();
-
-          // Check 1: User's last_login or audit_log or demo_user_logins
-          const targetTablesRes = await pool.query(`SELECT table_name FROM information_schema.tables WHERE table_schema='public'`);
-          const targetTables = targetTablesRes.rows.map(t => t.table_name.toLowerCase());
-
-          // A. If target has audit_log (e.g. Cashpilot)
-          if (targetTables.includes('audit_log')) {
-            const auditCheck = await pool.query(`
-              SELECT a.created_at 
-              FROM audit_log a
-              JOIN users u ON a.user_id = u.id
-              WHERE LOWER(u.email) = LOWER($1)
-              ORDER BY a.created_at ASC
-              LIMIT 1
-            `, [row.work_email]);
-            if (auditCheck.rows.length > 0) {
-              hasLoggedIn = true;
-              loginTimestamp = new Date(auditCheck.rows[0].created_at);
-            }
-          }
-
-          // B. Check users table for last_login / last_login_at / login_count
-          if (!hasLoggedIn && targetTables.includes('users')) {
-            const uColsRes = await pool.query(`SELECT column_name FROM information_schema.columns WHERE table_name='users'`);
-            const uCols = uColsRes.rows.map(c => c.column_name.toLowerCase());
+      // Check ready sessions in parallel with strict timeout so admin endpoint responds within milliseconds
+      await Promise.allSettled(
+        readySessions.rows.map(async (row) => {
+          let targetPool = null;
+          try {
+            targetPool = new Pool({
+              connectionString: row.demo_db_url,
+              connectionTimeoutMillis: 2000,
+              ssl: { rejectUnauthorized: false }
+            });
             
-            if (uCols.includes('last_login')) {
-              const uLogin = await pool.query(`SELECT last_login FROM users WHERE LOWER(email) = LOWER($1) AND last_login IS NOT NULL LIMIT 1`, [row.work_email]);
-              if (uLogin.rows.length > 0 && uLogin.rows[0].last_login) {
-                hasLoggedIn = true;
-                loginTimestamp = new Date(uLogin.rows[0].last_login);
-              }
-            }
-            if (!hasLoggedIn && uCols.includes('last_login_at')) {
-              const uLogin = await pool.query(`SELECT last_login_at FROM users WHERE LOWER(email) = LOWER($1) AND last_login_at IS NOT NULL LIMIT 1`, [row.work_email]);
-              if (uLogin.rows.length > 0 && uLogin.rows[0].last_login_at) {
-                hasLoggedIn = true;
-                loginTimestamp = new Date(uLogin.rows[0].last_login_at);
-              }
-            }
-            if (!hasLoggedIn && uCols.includes('login_count')) {
-              const uLogin = await pool.query(`SELECT login_count FROM users WHERE LOWER(email) = LOWER($1) AND login_count > 0 LIMIT 1`, [row.work_email]);
-              if (uLogin.rows.length > 0 && parseInt(uLogin.rows[0].login_count, 10) > 0) {
-                hasLoggedIn = true;
-              }
-            }
-          }
+            let hasLoggedIn = false;
+            let loginTimestamp = new Date();
 
-          // C. Check demo_users table if present
-          if (!hasLoggedIn && targetTables.includes('demo_users')) {
-            const dColsRes = await pool.query(`SELECT column_name FROM information_schema.columns WHERE table_name='demo_users'`);
-            const dCols = dColsRes.rows.map(c => c.column_name.toLowerCase());
-            if (dCols.includes('first_login_at') || dCols.includes('last_login_at') || dCols.includes('login_count')) {
-              const dUser = await pool.query(
-                `SELECT first_login_at, last_login_at, login_count FROM demo_users WHERE LOWER(email) = LOWER($1) LIMIT 1`,
-                [row.work_email]
-              );
-              if (dUser.rows.length > 0) {
-                const u = dUser.rows[0];
-                if (u.first_login_at || u.last_login_at || (u.login_count && parseInt(u.login_count, 10) > 0)) {
+            // Check 1: User's last_login or audit_log or demo_user_logins
+            const targetTablesRes = await targetPool.query(`SELECT table_name FROM information_schema.tables WHERE table_schema='public'`);
+            const targetTables = targetTablesRes.rows.map(t => t.table_name.toLowerCase());
+
+            // A. If target has audit_log (e.g. Cashpilot)
+            if (targetTables.includes('audit_log')) {
+              const auditCheck = await targetPool.query(`
+                SELECT a.created_at 
+                FROM audit_log a
+                JOIN users u ON a.user_id = u.id
+                WHERE LOWER(u.email) = LOWER($1)
+                ORDER BY a.created_at ASC
+                LIMIT 1
+              `, [row.work_email]);
+              if (auditCheck.rows.length > 0) {
+                hasLoggedIn = true;
+                loginTimestamp = new Date(auditCheck.rows[0].created_at);
+              }
+            }
+
+            // B. Check users table for last_login / last_login_at / login_count
+            if (!hasLoggedIn && targetTables.includes('users')) {
+              const uColsRes = await targetPool.query(`SELECT column_name FROM information_schema.columns WHERE table_name='users'`);
+              const uCols = uColsRes.rows.map(c => c.column_name.toLowerCase());
+              
+              if (uCols.includes('last_login')) {
+                const uLogin = await targetPool.query(`SELECT last_login FROM users WHERE LOWER(email) = LOWER($1) AND last_login IS NOT NULL LIMIT 1`, [row.work_email]);
+                if (uLogin.rows.length > 0 && uLogin.rows[0].last_login) {
                   hasLoggedIn = true;
-                  loginTimestamp = new Date(u.first_login_at || u.last_login_at || Date.now());
+                  loginTimestamp = new Date(uLogin.rows[0].last_login);
+                }
+              }
+              if (!hasLoggedIn && uCols.includes('last_login_at')) {
+                const uLogin = await targetPool.query(`SELECT last_login_at FROM users WHERE LOWER(email) = LOWER($1) AND last_login_at IS NOT NULL LIMIT 1`, [row.work_email]);
+                if (uLogin.rows.length > 0 && uLogin.rows[0].last_login_at) {
+                  hasLoggedIn = true;
+                  loginTimestamp = new Date(uLogin.rows[0].last_login_at);
+                }
+              }
+              if (!hasLoggedIn && uCols.includes('login_count')) {
+                const uLogin = await targetPool.query(`SELECT login_count FROM users WHERE LOWER(email) = LOWER($1) AND login_count > 0 LIMIT 1`, [row.work_email]);
+                if (uLogin.rows.length > 0 && parseInt(uLogin.rows[0].login_count, 10) > 0) {
+                  hasLoggedIn = true;
                 }
               }
             }
-          }
 
-          // D. Fallback: pg_stat_statements query tracker (covers ChainPilot, LedgerPilot, etc.)
-          if (!hasLoggedIn) {
-            try {
-              const stat = await pool.query(
-                `SELECT calls FROM pg_stat_statements 
-                 WHERE (
-                   query ~* 'from\\s+users\\s+where.*email' 
-                   OR query ~* 'lower\\(email\\)' 
-                   OR query ILIKE '%users%email%'
-                 ) 
-                 AND calls > 0 
-                 LIMIT 1`
-              );
-              if (stat.rows.length > 0 && parseInt(stat.rows[0].calls, 10) > 0) {
-                hasLoggedIn = true;
+            // C. Check demo_users table if present (covers apps maintaining demo_users telemetry)
+            if (!hasLoggedIn && targetTables.includes('demo_users')) {
+              const dColsRes = await targetPool.query(`SELECT column_name FROM information_schema.columns WHERE table_name='demo_users'`);
+              const dCols = dColsRes.rows.map(c => c.column_name.toLowerCase());
+              const queryCols = ['first_login_at', 'last_login_at', 'login_count'].filter(c => dCols.includes(c));
+              if (queryCols.length > 0) {
+                const dUser = await targetPool.query(
+                  `SELECT ${queryCols.join(', ')} FROM demo_users WHERE LOWER(email) = LOWER($1) LIMIT 1`,
+                  [row.work_email]
+                );
+                if (dUser.rows.length > 0) {
+                  const u = dUser.rows[0];
+                  if (u.first_login_at || u.last_login_at || (u.login_count && parseInt(u.login_count, 10) > 0)) {
+                    hasLoggedIn = true;
+                    loginTimestamp = new Date(u.first_login_at || u.last_login_at || Date.now());
+                  }
+                }
               }
-            } catch (_) {}
-          }
+            }
 
-          if (hasLoggedIn) {
-            const expiresAt = new Date(loginTimestamp.getTime() + 6 * 60 * 60 * 1000); // 6 hours demo timer
-            const isAlreadyExpired = expiresAt.getTime() <= Date.now();
-            const targetStatus = isAlreadyExpired ? 'expired' : 'active';
-            const initialLog = [{ event: "First Successful Login via Product App", timestamp: loginTimestamp.toISOString(), client: row.application }];
-            await query(
-              `UPDATE demo_sessions
-               SET first_login_at = $1, expires_at = $2, last_login_at = $1, status = $3, login_count = COALESCE(login_count, 0) + 1, activity_log = $4
-               WHERE id = $5`,
-              [loginTimestamp, expiresAt, targetStatus, JSON.stringify(initialLog), row.id]
-            );
-          }
+            // D. FMCG & Enterprise App Activity Check (orders, sales, collections, outlets, claims created by or during user session)
+            if (!hasLoggedIn) {
+              const activityTables = ['orders', 'sales_orders', 'collections', 'delivery_trips', 'purchase_orders'];
+              for (const actTbl of activityTables) {
+                if (targetTables.includes(actTbl)) {
+                  try {
+                    const actRes = await targetPool.query(
+                      `SELECT created_at FROM "${actTbl}" 
+                       WHERE created_at > (SELECT created_at FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1)
+                       ORDER BY created_at DESC LIMIT 1`,
+                      [row.work_email]
+                    );
+                    if (actRes.rows.length > 0 && actRes.rows[0].created_at) {
+                      hasLoggedIn = true;
+                      loginTimestamp = new Date(actRes.rows[0].created_at);
+                      break;
+                    }
+                  } catch (_) {}
+                }
+              }
+            }
 
-          await pool.end();
-        } catch (subErr) {
-          // ignore individual db check error
-        }
-      }
+            // E. Fallback: pg_stat_statements query tracker (covers ChainPilot, LedgerPilot, etc.)
+            if (!hasLoggedIn) {
+              try {
+                const stat = await targetPool.query(
+                  `SELECT calls FROM pg_stat_statements 
+                   WHERE (
+                     query ~* 'from\\s+users\\s+where.*email' 
+                     OR query ~* 'lower\\(email\\)' 
+                     OR query ILIKE '%users%email%'
+                   ) 
+                   AND calls > 0 
+                   LIMIT 1`
+                );
+                if (stat.rows.length > 0 && parseInt(stat.rows[0].calls, 10) > 0) {
+                  hasLoggedIn = true;
+                }
+              } catch (_) {}
+            }
+
+            if (hasLoggedIn) {
+              const expiresAt = new Date(loginTimestamp.getTime() + 6 * 60 * 60 * 1000); // 6 hours demo timer
+              const isAlreadyExpired = expiresAt.getTime() <= Date.now();
+              const targetStatus = isAlreadyExpired ? 'expired' : 'active';
+              const initialLog = [{ event: "First Successful Login via Product App", timestamp: loginTimestamp.toISOString(), client: row.application }];
+              await query(
+                `UPDATE demo_sessions
+                 SET first_login_at = $1, expires_at = $2, last_login_at = $1, status = $3, login_count = COALESCE(login_count, 0) + 1, activity_log = $4
+                 WHERE id = $5`,
+                [loginTimestamp, expiresAt, targetStatus, JSON.stringify(initialLog), row.id]
+              );
+            }
+          } catch (subErr) {
+            // ignore individual db check error
+          } finally {
+            if (targetPool) {
+              try { await targetPool.end(); } catch (_) {}
+            }
+          }
+        })
+      );
     } catch (syncErr) {
       console.warn('Sync ready sessions check failed:', syncErr.message);
     }
