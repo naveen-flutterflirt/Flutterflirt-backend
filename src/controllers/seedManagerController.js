@@ -206,14 +206,19 @@ const runSeedForProduct = async (productId, runType = 'manual') => {
       `).then(r => Boolean(r.rows[0]?.tbl)).catch(() => false);
 
       if (hasUsersTable) {
-        // Ensure INSERT INTO users statements have ON CONFLICT (email) DO NOTHING
-        // so inserting existing seed users never throws duplicate key violations
-        executableSql = executableSql.replace(
-          /(INSERT\s+INTO\s+(?:["`]?\w+["`]?\.)?["`]?users["`]?[\s\S]*?VALUES[\s\S]*?\))(?!\s*ON\s+CONFLICT)(;|\s*$)/gi,
-          (match, p1, p2) => {
-            return `${p1} ON CONFLICT (email) DO NOTHING${p2}`;
+        // Safe user insertion: only apply ON CONFLICT if the user statement does not already have an ON CONFLICT clause
+        // Split SQL by statements safely to avoid greedy matching across subsequent tables (like companies, beats, etc.)
+        const stmts = executableSql.split(/;\s*(?=(?:[^']*'[^']*')*[^']*$)/);
+        const transformedStmts = stmts.map(stmt => {
+          const trimmed = stmt.trim();
+          if (/^INSERT\s+INTO\s+(?:["`]?\w+["`]?\.)?["`]?users["`]?/i.test(trimmed)) {
+            if (!/ON\s+CONFLICT/i.test(trimmed)) {
+              return `${trimmed} ON CONFLICT (email) DO NOTHING`;
+            }
           }
-        );
+          return trimmed;
+        }).filter(Boolean);
+        executableSql = transformedStmts.join(';\n\n') + ';';
       } else {
         // Target DB schema doesn't have a 'users' table - remove or comment out any 'INSERT INTO users' statements
         appendLog(`Note: Target database does not have a 'users' table. Bypassing any user table insertion.`);
