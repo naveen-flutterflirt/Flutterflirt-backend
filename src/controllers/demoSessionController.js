@@ -248,20 +248,18 @@ const sendDemoOtp = async (req, res) => {
       [trimmedEmail, normalizedApp]
     );
 
-    // 2. Check existing session in demo_sessions
+    // 2. Check existing session in demo_sessions (exact match on normalized application name)
     const existingSession = await query(
       `SELECT id, demo_id, status, expires_at, first_login_at, application 
        FROM demo_sessions 
        WHERE LOWER(work_email) = $1 
          AND (
            REGEXP_REPLACE(LOWER(application), '[^a-z0-9]', '', 'g') = $2
-           OR LOWER(application) = LOWER($3)
-           OR LOWER(application) LIKE LOWER($4)
-           OR LOWER($3) LIKE LOWER('%' || application || '%')
+           OR LOWER(TRIM(application)) = LOWER(TRIM($3))
          )
        ORDER BY created_at DESC 
        LIMIT 1`,
-      [trimmedEmail, normalizedApp, appRequested, `%${appRequested}%`]
+      [trimmedEmail, normalizedApp, appRequested]
     );
 
     if (existingSession.rows.length > 0) {
@@ -464,20 +462,18 @@ const submitDemoRequest = async (req, res) => {
       [trimmedEmail, normalizedApp]
     );
 
-    // 2. STRICT CHECK: User cannot claim another demo from the same Email ID for this product
+    // 2. STRICT CHECK: User cannot claim another demo from the same Email ID for this product (exact match on normalized application name)
     const existingSession = await query(
       `SELECT id, demo_id, status, expires_at, first_login_at, application 
        FROM demo_sessions 
        WHERE LOWER(work_email) = $1 
          AND (
            REGEXP_REPLACE(LOWER(application), '[^a-z0-9]', '', 'g') = $2
-           OR LOWER(application) = LOWER($3)
-           OR LOWER(application) LIKE LOWER($4)
-           OR LOWER($3) LIKE LOWER('%' || application || '%')
+           OR LOWER(TRIM(application)) = LOWER(TRIM($3))
          )
        ORDER BY created_at DESC 
        LIMIT 1`,
-      [trimmedEmail, normalizedApp, appRequested, `%${appRequested}%`]
+      [trimmedEmail, normalizedApp, appRequested]
     );
 
     if (existingSession.rows.length > 0) {
